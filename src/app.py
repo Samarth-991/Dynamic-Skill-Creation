@@ -115,17 +115,17 @@ def _record_tokens(activity: str, label: str, usage: Dict):
 # ══════════════════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.title("⚙️ Configuration")
+    st.title("⚙️ LLM Configuration")
     option = st.sidebar.selectbox(
-            "Select LLM Service ",("GROQ","Openai","Google","Ollama"),
+            "Select LLM Service ",("GROQ","Openai","Google","Ollama","AzureOpenAI"),
             index=None,
             placeholder="Select LLM Service...", 
             )
     api_key = st.sidebar.text_input("API_KEY", type="password", key="password")
-    if option is not None:
-        print(f"Selected LLM Service: {option}")
+    if option is not '' and api_key is not '':
         llm = call_llmservice(option,api_key)
-
+        st.caption("Model: {}".format(llm.model_name))
+    
     # 1. skill registry 
     _reg = get_registry()
     _skills_with_keys = {
@@ -488,8 +488,6 @@ with tab_library:
 
 with tab_tokens:
     st.header("📊 Token Usage Dashboard")
-    st.caption("Model: `gemini-3-pro-preview`")
-
     hist = st.session_state["token_history"]
     tt   = sum(r["total"]  for r in hist)
     ti   = sum(r["input"]  for r in hist)
