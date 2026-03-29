@@ -57,7 +57,7 @@ Here with LangChain, LangGraph, and Streamlit.
 ---
 
 ## Architecture Overview
-
+!image[https://github.com/Samarth-991/Dynamic-Skill-Creation/blob/main/Architecture-diagram.png]
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          app.py  (Streamlit UI)                          │
