@@ -58,55 +58,7 @@ Here with LangChain, LangGraph, and Streamlit.
 
 ## Architecture Overview
 ![image](https://github.com/Samarth-991/Dynamic-Skill-Creation/blob/main/Architecture-diagram.png)
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          app.py  (Streamlit UI)                          │
-│                                                                          │
-│  Tab 1: 💬 Chat          Tab 2: 🛠️ Create Skill   Tab 3: 📦 Library    │
-│  ─────────────────        ─────────────────────    ─────────────────     │
-│  User sends query         User describes skill      Browse all skills    │
-│        │                        │                   with SKILL.md        │
-│        │                        │                   and script previews  │
-│        ▼                        ▼                                        │
-│  get_registry()          create_skill_programmatic()                     │
-│  run_agent(query,              │                                         │
-│    registry)                   ├── build_brief_from_description()        │
-│        │                       ├── generate_skill_md()                   │
-│        │                       ├── generate_script()                     │
-│        │                       ├── generate_tool_stub()                  │
-│        │                       ├── write_to_disk()                       │
-│        │                       ├── register_tool()                       │
-│        │                       ├── test_routing()                        │
-│        │                       └── reload_tools()  ←── hot-reload        │
-│        │                              │                                  │
-│        │                    Skill immediately live                       │
-│        │                    in Tab 1 Chat ─────────────────────►         │
-└────────┼────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────────────────┐
-│              skill_agent.py                    │
-│                                                │
-│  run_agent(query, registry)                    │
-│       │                                        │
-│       ▼                                        │
-│  LangGraph StateGraph                          │
-│       │                                        │
-│  agent_node ──► execute_tools ──► agent_node   │
-│       │              │                 │       │
-│  (routing)    (tool calls)       (response)    │
-└────────────────────────────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────────────────┐
-│           skills_registry.py                   │
-│                                                │
-│  get_registry()  ←── always reads fresh disk  │
-│       │                                        │
-│  format_skills_for_prompt()  → system prompt  │
-│  get_skill_instructions()    → SKILL.md body  │
-└────────────────────────────────────────────────┘
-```
+
 
 ---
 
