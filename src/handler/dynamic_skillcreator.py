@@ -43,7 +43,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 PROJECT_ROOT = Path(__file__).parent
 SKILLS_DIR   = PROJECT_ROOT / "../skills"
-AGENT_FILE   = PROJECT_ROOT / "agent/skill_agent.py"
+AGENT_FILE   = PROJECT_ROOT / "../agent/skill_agent.py"
 
 # ── Terminal colours (CLI only) ───────────────────────────────────────────────
 GREEN  = "\033[92m"
@@ -113,17 +113,6 @@ def _accumulate_tokens(response) -> Dict:
     _CREATE_TOKENS["total_tokens"]  += usage["total_tokens"]
     return usage
 
-def _llm_call(system: str, user: str, temperature: float = 0.2) -> str:
-    from langchain_groq import ChatGroq
-    os.environ["GROQ_API_KEY"] = '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'
-    model_name = "meta-llama/llama-4-scout-17b-16e-instruct"
-    llm = ChatGroq(model=model_name)
-    response = llm.invoke([
-        SystemMessage(content=system),
-        HumanMessage(content=user),
-    ])
-    _accumulate_tokens(response)
-    return _extract_text(response.content)
 
 
 def _strip_fences(text: str, lang: str = "") -> str:
@@ -139,15 +128,23 @@ class SkillCreator:
     Can be used interactively (CLI) or programmatically (app.py / test_agent.py).
     """
     def __init__(self,llm=None):
-        self._llm_call = llm
+        self.llm = llm
     
-    def build_brief_from_description(self, description: str) -> Dict:
+    def _llm_call(self,system: str, user: str, temperature: float = 0.2) -> str:
+        response = self.llm.invoke([
+            SystemMessage(content=system),
+            HumanMessage(content=user),
+        ])
+        _accumulate_tokens(response)
+        return _extract_text(response.content)
+
+    def build_brief_from_description(self, description: str,source_hint:str=None) -> Dict:
         """
         Use LLM to extract a structured brief from a free-text description.
         Returns a dict with all fields needed for generation.
         Does NOT prompt the user — safe to call from a UI.
         """
-        raw = _llm_call(
+        raw = self._llm_call(
             system=textwrap.dedent("""
                 You are a skill architect. Given a skill description, return ONLY valid JSON
                 (no markdown fences, no explanation) matching this schema exactly:
@@ -163,7 +160,12 @@ class SkillCreator:
                   "suggested_test_query":"a realistic user query that should trigger this skill"
                 }
             """),
-            user=f"Skill description: {description}",
+            user=textwrap.dedent(f"""
+                Source: {source_hint or 'uploaded content'}
+
+                Content:
+                {description}
+            """),
             temperature=0.1,
         )
         raw = _strip_fences(raw, "json")
@@ -197,69 +199,7 @@ class SkillCreator:
 
         return brief
 
-    
-    def build_brief_from_content(self, content: str, source_hint: str = "") -> Dict:
-        """
-        Build a structured brief from raw content (fetched URL or uploaded markdown).
-        The LLM reads the full content and infers skill intent from it.
 
-        Args:
-            content     : Raw text/markdown extracted from URL or file
-            source_hint : Optional label shown to LLM e.g. "GitHub README", "docs page"
-        """
-        # Truncate to avoid token overflow — 6000 chars is safe for most models
-        truncated = content[:6000]
-        if len(content) > 6000:
-            truncated += "\n\n[... content truncated for brevity ...]"
-
-        raw = _llm_call(
-            system=textwrap.dedent("""
-                You are a skill architect. You will receive content from a documentation page,
-                README, or markdown file. Your job is to infer what skill this describes and
-                return ONLY valid JSON (no fences, no explanation) matching this schema exactly:
-                {
-                "skill_name":          "lowercase-hyphen-name",
-                "one_liner":           "one sentence summary",
-                "what_it_does":        "detailed description of what the skill does",
-                "trigger_phrases":     ["phrase 1", "phrase 2", "phrase 3"],
-                "input_type":          "what the user provides",
-                "output_type":         "what the skill produces",
-                "python_libraries":    ["lib1", "lib2"],
-                "needs_script":        true,
-                "suggested_test_query":"a realistic user query that should trigger this skill"
-                }
-                Infer all fields from the content. Be specific with trigger_phrases.
-            """),
-            user=textwrap.dedent(f"""
-                Source: {source_hint or 'uploaded content'}
-
-                Content:
-                {truncated}
-            """),
-            temperature=0.1,
-        )
-        raw = _strip_fences(raw, "json")
-        try:
-            brief = json.loads(raw)
-        except json.JSONDecodeError:
-            # Fallback to description-based brief using the first 200 chars as hint
-            return self.build_brief_from_description(content[:200])
-
-        # Normalise (same as build_brief_from_description)
-        brief["skill_name"] = re.sub(r"[^a-z0-9-]", "-",
-                                    brief["skill_name"].lower()).strip("-")
-        if isinstance(brief.get("trigger_phrases"), str):
-            brief["trigger_phrases"] = [brief["trigger_phrases"]]
-        if isinstance(brief.get("python_libraries"), str):
-            brief["python_libraries"] = [l.strip() for l in
-                                        brief["python_libraries"].split(",") if l.strip()]
-        if isinstance(brief.get("needs_script"), str):
-            brief["needs_script"] = brief["needs_script"].lower() in ("yes","true","1","y")
-
-        return brief
-        
-
-    
     def interview_user(self, description: str) -> Dict:
         """
         Interactive version of build_brief_from_description.
@@ -317,7 +257,6 @@ class SkillCreator:
         return gathered
 
     # Generate SKILL.md
-
     _SKILL_MD_SYSTEM = textwrap.dedent("""
         You are an expert skill architect for an AI agent system.
         Write a complete, production-quality SKILL.md for a new skill.
@@ -362,8 +301,7 @@ class SkillCreator:
             Has script:       {brief['needs_script']}
             Test query:       {brief['suggested_test_query']}
         """)
-        return _llm_call(self._SKILL_MD_SYSTEM, prompt, temperature=0.15)
-
+        return self._llm_call(self._SKILL_MD_SYSTEM, prompt, temperature=0.15)
 
     _SCRIPT_SYSTEM = textwrap.dedent("""
         You are an expert Python developer writing an implementation script for an AI skill.
@@ -390,9 +328,8 @@ class SkillCreator:
             Main function:  run_{fn}(input_value: str) -> dict
             Script file:    {fn}.py
         """)
-        code = _llm_call(self._SCRIPT_SYSTEM, prompt, temperature=0.1)
+        code = self._llm_call(self._SCRIPT_SYSTEM, prompt, temperature=0.1)
         return _strip_fences(code, "python")
-
 
     _TOOL_STUB_SYSTEM = textwrap.dedent("""
         Write a LangChain @tool function for skill_agent.py.
@@ -433,7 +370,7 @@ class SkillCreator:
                     if str(scripts_dir) in sys.path:
                         sys.path.remove(str(scripts_dir))
         """)
-        stub = _llm_call(self._TOOL_STUB_SYSTEM, prompt, temperature=0.1)
+        stub = self._llm_call(self._TOOL_STUB_SYSTEM, prompt, temperature=0.1)
         return _strip_fences(stub, "python")
 
     def write_to_disk(self, brief: Dict, skill_md: str, script_code: str) -> Path:
@@ -469,8 +406,9 @@ class SkillCreator:
         Returns True if successfully registered.
         """
         if not AGENT_FILE.exists():
+            print ('unable to locate {}'.format(AGENT_FILE))  
             return False
-
+        
         content = AGENT_FILE.read_text(encoding="utf-8")
         fn_name = f"{skill_name.replace('-', '_')}_tool"
 
@@ -493,6 +431,7 @@ class SkillCreator:
             f"TOOLS_LIST = [\n    {fn_name},"
         )
         AGENT_FILE.write_text(new_content, encoding="utf-8")
+        print("New skill added in {}".format(AGENT_FILE))
         return True
 
     def test_routing(self, brief: Dict) -> Tuple[bool, str]:
@@ -509,7 +448,7 @@ class SkillCreator:
         if skill_name not in registry:
             return False, f"Skill '{skill_name}' not in registry after creation."
 
-        raw = _llm_call(
+        raw = self._llm_call(
             system=textwrap.dedent(f"""
                 You are a routing system. Given a user query and available skills,
                 return ONLY JSON:
@@ -559,7 +498,7 @@ class SkillCreator:
                 break
             elif choice == "1":
                 fb = input(_c(CYAN, "Feedback for SKILL.md: ")).strip()
-                skill_md = _llm_call(
+                skill_md = self._llm_call(
                     self._SKILL_MD_SYSTEM,
                     f"Rewrite based on feedback.\nOriginal:\n{skill_md}\nFeedback: {fb}",
                 )
@@ -568,7 +507,7 @@ class SkillCreator:
             elif choice == "2":
                 fb = input(_c(CYAN, "Feedback for script: ")).strip()
                 script_code = _strip_fences(
-                    _llm_call(self._SCRIPT_SYSTEM,
+                    self._llm_call(self._SCRIPT_SYSTEM,
                                f"Rewrite based on feedback.\nOriginal:\n{script_code}\nFeedback: {fb}",
                                temperature=0.1),
                     "python",
@@ -578,12 +517,12 @@ class SkillCreator:
                 print(_c(GREEN, "✔ Script regenerated."))
             elif choice == "3":
                 fb = input(_c(CYAN, "Feedback for both: ")).strip()
-                skill_md = _llm_call(
+                skill_md = self._llm_call(
                     self._SKILL_MD_SYSTEM,
                     f"Rewrite based on feedback.\nOriginal:\n{skill_md}\nFeedback: {fb}",
                 )
                 script_code = _strip_fences(
-                    _llm_call(self._SCRIPT_SYSTEM,
+                    self._llm_call(self._SCRIPT_SYSTEM,
                                f"Rewrite based on feedback.\nOriginal:\n{script_code}\nFeedback: {fb}",
                                temperature=0.1),
                     "python",
@@ -679,6 +618,7 @@ def create_skill_programmatic(
     llm,
     description: str,
     log: callable = print,
+    source_hint: Optional[str] = None,
 ) -> Dict:
     """
     Non-interactive entry point for app.py / test_agent.py.
