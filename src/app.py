@@ -19,6 +19,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import logging
 import warnings
+from agent.skill_agent import run_agent, reload_tools
+from handler.dynamic_skillcreator import create_skill_programmatic
+from utils.content_reader import read_markdown_file, fetch_url_content
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(filename="run.log",
@@ -32,8 +35,6 @@ st.set_page_config(
     layout="wide",
 )
 
-from agent.skill_agent import run_agent, reload_tools
-from handler.dynamic_skillcreator import create_skill_programmatic
 
 @st.cache_resource
 def call_llmservice(option,api_key):
@@ -356,28 +357,121 @@ with tab_create:
         | 7 | Routing self-test |
         """)
     
+    # ── Input-mode selector ───────────────────────────────────────────────────
+    input_mode = st.radio(
+        "📥 Skill source",
+        options=["✏️ Description", "🌐 URL"],
+        horizontal=True,
+        help=(
+            "**Description** — type a free-text description of what the skill should do.  \n"
+            "**URL** — paste a docs page, GitHub README, or any public webpage.  \n"
+            "**Markdown File** — upload a local `.md` / `.txt` file."
+        ),
+    )
+
+    # ── Dynamic input widgets based on mode ───────────────────────────────────
+
     with st.form("skill_form"):
-        skill_desc = st.text_area(
-            "Describe your skill",
-            placeholder="e.g. 'Extract text from PDF files'",
-            height=100,
-        )
+        skill_desc    = ""   # used by Description mode
+        skill_url     = ""   # used by URL mode
+        uploaded_file = None  # used by Markdown mode
+
+        if input_mode == "✏️ Description":
+            skill_desc = st.text_area(
+                "Describe your skill",
+                placeholder="e.g. 'Extract text from PDF files",
+                height=100,
+            )
+        elif input_mode == "🌐 URL":
+            skill_url = st.text_input(
+                "Documentation or README URL",
+                placeholder="https://github.com/owner/repo/blob/main/README.md",
+                help=(
+                    "Supports any public URL. GitHub `blob/` links are auto-converted "
+                    "to raw content. HTML pages are stripped to plain text."
+                ),
+            )
+            st.caption(
+                "💡 Works great with GitHub READMEs, PyPI docs, official library docs, "
+                "or any public documentation page."
+            )
+        elif input_mode == "📄 Markdown File":
+            uploaded_file = st.file_uploader("Upload a Markdown / text file",
+                type=["md", "txt", "rst"],
+                help="The file content is read locally — nothing is sent to external servers.",
+            )
+            if uploaded_file is not None:
+                st.caption(f"📎 Selected: `{uploaded_file.name}`  "
+                           f"({uploaded_file.size:,} bytes)")
+
         c1, c2 = st.columns([1, 3])
         submitted = c1.form_submit_button("🚀 Create", use_container_width=True, type="primary")
         c2.markdown(
             "<small style='color:grey'>~30–60 s · token usage shown after</small>",
             unsafe_allow_html=True,
         )
+    # ── On submit ─────────────────────────────────────────────────────────────
     if submitted:
         st.session_state["creation_result"]    = None
         st.session_state["last_created_skill"] = None
+        # ── Input validation ─────────────────────────────────────────────────
+        _input_ok   = False
+        _input_err  = ""
+
+        if input_mode == "✏️ Description":
+            if not skill_desc.strip():
+                _input_err = "Please enter a skill description."
+            else:
+                _input_ok = True
+ 
+        elif input_mode == "🌐 URL":
+            if not skill_url.strip():
+                _input_err = "Please enter a URL."
+            elif not skill_url.strip().startswith(("http://", "https://")):
+                _input_err = "URL must start with `http://` or `https://`."
+            else:
+                _input_ok = True
+ 
+        elif input_mode == "📄 Markdown File":
+            if uploaded_file is None:
+                print("not impleted yet ...")
+                _input_err = "Please upload a `.md` or `.txt` file."
+            else:
+                _input_ok = True
+ 
+        if not _input_ok:
+            st.error(f"❌ {_input_err}")
+            st.stop()
+        # ── Run pipeline ─────────────────────────────────────────────────────
         log_box, log_lines = st.empty(), []
         def ui_log(msg):
             log_lines.append(msg)
             log_box.markdown("\n\n".join(log_lines))
+        
         with st.spinner("Running pipeline..."):
             try:
-                result = create_skill_programmatic(llm,skill_desc.strip(), log=ui_log)
+                if input_mode == "✏️ Description":
+                    # ── Path A: plain description (original behaviour) ────────
+                    result = create_skill_programmatic(
+                        llm, skill_desc.strip(), log=ui_log
+                    )
+                elif input_mode == "🌐 URL":
+                    # ── Path B: fetch URL and build brief from content ────────
+                    ui_log(f"🌐  Fetching content from `{skill_url.strip()}`…")
+                    content, source_hint = fetch_url_content(skill_url.strip())
+                    ui_log(
+                        f"✅  Fetched {len(content):,} chars from **{source_hint}**"
+                    )
+                    result = create_skill_programmatic(llm, content, source_hint=source_hint, log=ui_log)
+                elif input_mode == "📄 Markdown File":
+                    # ── Path C: read uploaded file and build brief from content
+                    content, source_hint = read_markdown_file(uploaded_file)
+                    ui_log(
+                        f"📄  Read {len(content):,} chars from **{source_hint}**"
+                    )
+                    result = create_skill_programmatic(llm, content, log=ui_log,source_hint=source_hint)
+                # result = create_skill_programmatic(llm,skill_desc.strip(), log=ui_log)
+                # ── Common post-processing ────────────────────────────────────
                 st.session_state["creation_result"]    = result
                 st.session_state["last_created_skill"] = result["skill_name"]
                 usage = _safe_usage(result.get("token_usage", {}))
