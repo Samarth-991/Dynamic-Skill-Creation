@@ -249,9 +249,7 @@ def tool_node(state: AgentState) -> AgentState:
             print(f"[Tool] ⏭ SKIPPED duplicate call: {name}({json.dumps(args)[:80]})")
             # Return the cached result from the previous identical call
             cached = next(
-                (tr["result_full"] for tr in tool_results
-                 if tr["tool"] == name and
-                 json.dumps(tr["args"], sort_keys=True) == json.dumps(args, sort_keys=True)),
+                (tr["result_full"] for tr in tool_results if tr["tool"] == name and json.dumps(tr["args"], sort_keys=True) == json.dumps(args, sort_keys=True)),
                 json.dumps({"note": f"Already called {name} — using previous result."})
             )
             new_messages.append(
@@ -358,18 +356,20 @@ def run_agent(
     
     # if _is_list_skills_query(user_query):
     if response['result']: 
-      response_text = list_available_skills.invoke({})
-      if verbose:
+        response_text = list_available_skills.invoke({})
+    if verbose:
         print(f"\nFAST PATH — list_available_skills\n{response_text}")
-      return {
-          "response":       response_text,
-          "selected_skill": None,
-          "tools_called":   ["list_available_skills"],
+        return {
+            "response":       response_text,
+            "selected_skill": None,
+            "tools_called":   ["list_available_skills"],
+            "tool_results":   [],
+            "token_usage":    {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
         }
     
     def agent_node_with_registry(state: AgentState) -> AgentState:
-      return agent_node(llm,state,registry=registry)
-  
+        return agent_node(llm,state,registry=registry)
+
     graph = StateGraph(AgentState)
     graph.add_node("agent", agent_node_with_registry)
     graph.add_node("execute_tools", tool_node)
@@ -380,9 +380,9 @@ def run_agent(
     )
     graph.add_edge("execute_tools", "agent")
     try:
-      compiled = graph.compile()
+        compiled = graph.compile()
     except Exception as e:
-      print(f"[SkillAgent] Graph compilation failed: {e}")
+        print(f"[SkillAgent] Graph compilation failed: {e}")
         
     initial_state: AgentState = {
         "messages":           [HumanMessage(content=user_query)],
