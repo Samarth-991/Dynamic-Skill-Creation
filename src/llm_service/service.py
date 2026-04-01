@@ -15,8 +15,7 @@ class LLMService:
         llm = ChatOllama(model=model_name,temperature=0)
         return llm
     
-    def get_groq_model(self,key,model_name = "gemma2-9b-it"):
-        print("Setting GROQ_API_KEY in environment variables...")
+    def get_groq_model(self,key,model_name = "qwen/qwen3-32b"):
         os.environ["GROQ_API_KEY"] = key
         llm_groq = ChatGroq(model=model_name)
         return llm_groq
@@ -31,10 +30,15 @@ class LLMService:
             max_retries=2)
         return llm
 
-    def get_llm_model(self, key=None):
+    def get_llm_model(self,):
         try:
+            if self.service_name == 'AzureOpenAi':
+                logging.error('AzureOpenAi is not implemented yet')
+                raise NotImplementedError('AzureOpenAi is not implemented yet')
+
             if self.service_name == "Openai":
-                return "Not implemented yet"
+                logging.error('Openai is not implemented yet')
+                raise NotImplementedError('Openai is not implemented yet')
             
             elif self.service_name == "Ollama":
                 return self.ollama_model()

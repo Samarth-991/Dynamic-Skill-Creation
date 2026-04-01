@@ -4,11 +4,11 @@ skill_agent.py
 LangGraph agent that replicates Claude's skill execution pipeline.
 
 STEPS:
-  STEP 1  — SKILL DISCOVERY   (system prompt injection from registry)
-  STEP 2  — SKILL ROUTING     (LLM picks best skill from descriptions)
-  STEP 3  — SKILL READING     (read_skill_instructions called first)
-  STEP 4  — SKILL EXECUTION   (LLM follows SKILL.md workflow, calls tools)
-  STEP 5  — RESPONSE GENERATION (clean Markdown, never raw objects)
+    STEP 1  — SKILL DISCOVERY   (system prompt injection from registry)
+    STEP 2  — SKILL ROUTING     (LLM picks best skill from descriptions)
+    STEP 3  — SKILL READING     (read_skill_instructions called first)
+    STEP 4  — SKILL EXECUTION   (LLM follows SKILL.md workflow, calls tools)
+    STEP 5  — RESPONSE GENERATION (clean Markdown, never raw objects)
 
 LLM: provided by user at runtime (OpenAI, Azure, Groq, etc) — agent should be model-agnostic
 Orchestration: LangGraph StateGraph
@@ -117,29 +117,6 @@ def browser_search_tool(query: str) -> str:
         if str(scripts_dir) in sys.path:
             sys.path.remove(str(scripts_dir))
 
-@tool
-def opencv_image_reader_tool(input_value: str) -> str:
-    """Read, load, or open an image using OpenCV in Python"""
-    scripts_dir = Path(__file__).parent / "skills" / "opencv-image-reader" / "scripts"
-    sys.path.insert(0, str(scripts_dir))
-    try:
-        import opencv_image_reader
-        result = opencv_image_reader.run_opencv_image_reader(input_value)
-        return json.dumps(result, ensure_ascii=False, indent=2)
-    except ImportError as e:
-        return json.dumps({"error": str(e), "error_type": type(e).__name__})
-    except Exception as e:
-        return json.dumps({"error": str(e), "error_type": type(e).__name__})
-    finally:
-        if str(scripts_dir) in sys.path:
-            sys.path.remove(str(scripts_dir))
-
-
-TOOLS_LIST = [
-    list_available_skills, web_page_scraper_tool, read_skill_instructions, opencv_image_reader_tool]
-TOOLS    = list(TOOLS_LIST)
-TOOL_MAP = {t.name: t for t in TOOLS}
-
 
 def reload_tools():
     """
@@ -157,17 +134,17 @@ def reload_tools():
 
     # Search every loaded module for one whose __file__ matches ours
     for key, mod in list(sys.modules.items()):
-      mod_file = getattr(mod, "__file__", None)
-      if mod_file and Path(mod_file).resolve() == this_file:
-          try:
-            mod      = importlib.reload(mod)
-            TOOLS    = mod.TOOLS_LIST
-            TOOL_MAP = {t.name: t for t in TOOLS}
-            reloaded = True
-            print(f"[SkillAgent] Reloaded via key='{key}' — {len(TOOLS)} tools")
-            break
-          except Exception as e:
-            print(f"[SkillAgent] Reload failed for key='{key}': {e}")
+        mod_file = getattr(mod, "__file__", None)
+        if mod_file and Path(mod_file).resolve() == this_file:
+            try:
+                mod      = importlib.reload(mod)
+                TOOLS    = mod.TOOLS_LIST
+                TOOL_MAP = {t.name: t for t in TOOLS}
+                reloaded = True
+                print(f"[SkillAgent] Reloaded via key='{key}' — {len(TOOLS)} tools")
+                break
+            except Exception as e:
+                print(f"[SkillAgent] Reload failed for key='{key}': {e}")
 
     if not reloaded:
         # Module not in sys.modules yet — just rebuild from current globals
@@ -197,37 +174,37 @@ def build_system_prompt(registry: Optional[Dict] = None, executed_tools: Optiona
         )
 
     return f"""You are a helpful assistant with access to specialised **Skills**.
+    
+    ## Handling Requests
 
-  ## Handling Requests
+    1. Check if any skill matches the user's request using the descriptions below.
+    2. If a skill matches, call `read_skill_instructions` ONCE, then call the skill tool ONCE.
+    3. After tools return results, write your final Markdown response immediately.
+    4. If no skill matches, answer from your own knowledge.
 
-  1. Check if any skill matches the user's request using the descriptions below.
-  2. If a skill matches, call `read_skill_instructions` ONCE, then call the skill tool ONCE.
-  3. After tools return results, write your final Markdown response immediately.
-  4. If no skill matches, answer from your own knowledge.
+    ## ABSOLUTE Tool Usage Rules — violations cause infinite loops
 
-  ## ABSOLUTE Tool Usage Rules — violations cause infinite loops
+    - Call `read_skill_instructions` EXACTLY ONCE per request — NEVER call it twice.
+    - Call each skill tool EXACTLY ONCE — NEVER repeat a tool call.
+    - If a tool returns an error, write the error to the user — do NOT retry with different args or a different skill.
+    - After receiving ANY tool result (success OR error), STOP calling tools and write your response.
+    - Do NOT fall back to a different skill if the first skill returned an error — report the error instead.
+    - Do NOT call `web_page_scraper_tool` or any other skill as a workaround for a failed YouTube tool.
 
-  - Call `read_skill_instructions` EXACTLY ONCE per request — NEVER call it twice.
-  - Call each skill tool EXACTLY ONCE — NEVER repeat a tool call.
-  - If a tool returns an error, write the error to the user — do NOT retry with different args or a different skill.
-  - After receiving ANY tool result (success OR error), STOP calling tools and write your response.
-  - Do NOT fall back to a different skill if the first skill returned an error — report the error instead.
-  - Do NOT call `web_page_scraper_tool` or any other skill as a workaround for a failed YouTube tool.
+    ---
 
-  ---
+    {skills_block}
+    {done_block}
+    ---
 
-  {skills_block}
-  {done_block}
-  ---
-
-  ## Response Format Rules
+    ## Response Format Rules
 
   - **ALWAYS** return clean Markdown text — never raw Python dicts, JSON objects, or repr strings.
   - **NEVER** include `extras`, `signature`, `type`, `id`, or base64 strings in your response.
-  - When a tool returns an error, present it clearly: state the error, explain likely cause, suggest fix.
-  - When a tool returns transcript text, format it clearly for the user.
-  - Execute immediately — do not ask for confirmation.
-  """
+    - When a tool returns an error, present it clearly: state the error, explain likely cause, suggest fix.
+    - When a tool returns transcript text, format it clearly for the user.
+    - Execute immediately — do not ask for confirmation.
+    """
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FAST PATH — handle "list skills" without going through the LLM round-trip
