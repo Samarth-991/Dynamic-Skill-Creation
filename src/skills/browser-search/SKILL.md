@@ -1,14 +1,13 @@
 ---
 name: browser-search
-description: >
-  Use this skill whenever the user needs to find information on the internet,
-  research a topic, look up current events, verify facts, or fetch and read
-  the content of a specific URL. Triggers include: "search the web for",
-  "find information about", "look up", "what is the latest on", "scrape this
-  URL", "fetch this page", "research X", or any question that requires
-  real-time or external data. Uses SerpAPI (via LangChain) to discover
-  relevant URLs and Firecrawl (via LangChain) to fetch and convert page
-  content into clean LLM-ready markdown.
+description: Use this skill whenever the user needs to find information on the internet,
+research a topic, look up current events, verify facts, or fetch and read
+the content of a specific URL. 
+Triggers include "search the web for","find information about", "look up", "what is the latest on", "scrape this
+URL", "fetch this page", "research X", or any question that requires
+real-time or external data. Uses SerpAPI (via LangChain) to discover
+relevant URLs and Firecrawl (via LangChain) to fetch and convert page
+content into clean LLM-ready markdown.
 ---
 
 # Browser Search Skill
