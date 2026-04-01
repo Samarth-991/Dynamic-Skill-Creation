@@ -15,7 +15,9 @@ class iskillQuery(BaseModel):
 def is_skill_query_prompt(parser=None):
     template = """Given a user query, determine if the user is asking about the skills available.
                 query: {query_for_skill}
-                Return True or False only. in JSON format only with a key 'result'. For example: "result": true or "result": false"""
+                Return True or False only. in JSON format only with a key 'result'. For example: "result": true or "result": false
+                Do nor add any additional information or explanation. Do not add any text other than the JSON response.
+                """
     
     return PromptTemplate(input_variables=["query_for_skill"], template=template,)# partial_variables={"format_instructions": parser.get_format_instructions()})
 
