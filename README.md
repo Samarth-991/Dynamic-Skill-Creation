@@ -1,4 +1,4 @@
-# Dynamic Skill Generation — LangChain Skills Agent
+# Dynamic Skill Generation — LangChain Deep-Agent
 
 A self-extending AI agent that writes, registers, and hot-reloads its own tools at runtime —
 no restarts, no manual code edits. Describe a capability in plain English (or paste a docs URL,
