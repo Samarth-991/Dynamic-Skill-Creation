@@ -1,0 +1,15 @@
+# browser-search skill dependencies
+# SerpAPI Python client (PyPI package name is google-search-results)
+google-search-results>=2.4.2
+
+# Firecrawl Python SDK
+firecrawl-py>=1.0.0
+
+# LangChain community integrations (SerpAPIWrapper, FireCrawlLoader)
+langchain-community>=0.2.0
+
+# LangChain core (tool decorator, base classes)
+langchain-core>=0.2.0
+
+# Required if using the agent example with Claude
+langchain-anthropic>=0.1.0
