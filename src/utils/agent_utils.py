@@ -11,7 +11,7 @@ import sys
 import re
 import json
 from typing import TypedDict, Annotated, Optional, List, Dict, Any
-
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
 
 def extract_text_content(content: Any) -> str:
     """
@@ -76,3 +76,49 @@ def extract_text_content(content: Any) -> str:
         raw = m.group(1).strip("'")
     return raw.strip()
 
+def extract_agent_response(query,response: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extracts the final response, selected skill, tool results, and token usage from the agent's response.
+    Handles various formats of AI messages and tool calls.
+    """
+    AgentState = {
+        "messages": [HumanMessage(content=query)],
+        "selected_skill": None,
+        "skill_instructions": None,
+        "tools_called": [],
+        "tool_results": [],
+        "response": None,
+        "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    }
+    for msg in response['messages']:
+        # --- HUMAN MESSAGE ---
+        if isinstance(msg, HumanMessage):
+            # already added manually, skip or append if needed
+            continue
+
+        # --- AI MESSAGE ---
+        elif isinstance(msg, AIMessage):
+            # accumulate token usage
+            usage = getattr(msg, "usage_metadata", {})
+            if usage:
+                AgentState["token_usage"]["input_tokens"] += usage.get("input_tokens", 0)
+                AgentState["token_usage"]["output_tokens"] += usage.get("output_tokens", 0)
+                AgentState["token_usage"]["total_tokens"] += usage.get("total_tokens", 0)
+
+            # if AI made tool calls → intermediate step
+            if msg.tool_calls:
+                AgentState["selected_skill"] = msg.tool_calls[0].get("name")    
+                AgentState['tools_called'].append(msg.tool_calls[0].get("name"))
+
+            # if AI has actual content → final answer
+            if msg.content:
+                AgentState["response"] = msg.content
+
+        # --- TOOL MESSAGE ---
+        elif isinstance(msg, ToolMessage):
+            AgentState["tool_results"].append({
+                "tool_name": msg.name,
+                "content": msg.content,
+                "tool_call_id": msg.tool_call_id
+            })
+    return AgentState

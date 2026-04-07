@@ -9,45 +9,40 @@ import logging
 class LLMService:
     def __init__(self, service_name, api_key=None):
         self.service_name = service_name
-        self.key = api_key
-    
-    def ollama_model(self, model_name = "PetrosStav/gemma3-tools:4b"):#'llama3-groq-tool-use:latest' , PetrosStav/gemma3-tools:4b
+        self._key = api_key
+
+    def ollama_model(self, model_name = "qwen3:4b"):#'llama3-groq-tool-use:latest'
         llm = ChatOllama(model=model_name,temperature=0)
         return llm
     
-    def get_groq_model(self,key,model_name = "qwen/qwen3-32b"):
+    def get_groq_model(self,key,model_name = "gemma2-9b-it"):
+        print("Setting GROQ_API_KEY in environment variables...")
         os.environ["GROQ_API_KEY"] = key
         llm_groq = ChatGroq(model=model_name)
         return llm_groq
 
-    def get_googleGemini(self,key):
-        os.environ["GOOGLE_API_KEY"] = key
+    def get_googleGemini(self,api_key:str, temperature: float = 0.1) -> str:
+    
         llm = ChatGoogleGenerativeAI(
-            model="gemini-3-pro-preview",
-            temperature=0,
-            max_tokens=None,
-            timeout=None,
-            max_retries=2)
+            model="gemini-2.5-flash",
+            google_api_key=api_key,
+            temperature=temperature,
+        )
         return llm
 
     def get_llm_model(self,):
         try:
-            if self.service_name == 'AzureOpenAi':
-                logging.error('AzureOpenAi is not implemented yet')
-                raise NotImplementedError('AzureOpenAi is not implemented yet')
-
             if self.service_name == "Openai":
-                logging.error('Openai is not implemented yet')
-                raise NotImplementedError('Openai is not implemented yet')
+                return "Not implemented yet"
             
             elif self.service_name == "Ollama":
                 return self.ollama_model()
             
             elif self.service_name == "Google":
-                return self.get_googleGemini(self.key)
+                return self.get_googleGemini(self._key)
             
             elif self.service_name == "GROQ":
-                return self.get_groq_model(self.key,model_name = "qwen/qwen3-32b")
+                return self.get_groq_model(self._key,model_name = "qwen/qwen3-32b")
             else:
                 logging.error(f'Invalid model type: {self.service_name}')
                 raise ValueError(f'Invalid model type: {self.service_name}')

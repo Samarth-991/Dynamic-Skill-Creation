@@ -16,7 +16,7 @@ def is_skill_query_prompt(parser=None):
     template = """Given a user query, determine if the user is asking about the skills available.
                 query: {query_for_skill}
                 Return True or False only. in JSON format only with a key 'result'. For example: "result": true or "result": false
-                Do nor add any additional information or explanation. Do not add any text other than the JSON response.
+                Do not include any explanations, reasoning, or additional text. Return only the JSON response.
                 """
     
     return PromptTemplate(input_variables=["query_for_skill"], template=template,)# partial_variables={"format_instructions": parser.get_format_instructions()})
@@ -24,9 +24,12 @@ def is_skill_query_prompt(parser=None):
 def is_skill_query_chain(llm,user_query:str):
     structred_response = StrOutputParser(pydantic_object=iskillQuery)
     chain =  is_skill_query_prompt() | llm |StrOutputParser()
+    
     response = chain.invoke(
         {
             'query_for_skill': user_query
         }
     )
     return extract_response(response)
+
+

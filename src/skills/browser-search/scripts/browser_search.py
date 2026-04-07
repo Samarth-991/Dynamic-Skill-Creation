@@ -29,6 +29,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from langchain_community.utilities import SerpAPIWrapper
 from langchain_community.document_loaders import FireCrawlLoader
+from langchain_community.utilities import GoogleSerperAPIWrapper
+from langchain_community.tools import DuckDuckGoSearchResults,DuckDuckGoSearchRun
 from langchain_core.tools import tool
 
 
@@ -147,6 +149,14 @@ def firecrawl_scrape_many(urls: list[str], max_workers: int = 3) -> list[Optiona
         return list(executor.map(_safe_scrape, urls))
 
 
+def run_duckduckgo_search(query: str) -> str:
+    """
+    Uses DuckDuckGo to perform a search and returns a list of results with title, URL, and snippet.
+    """
+    search = DuckDuckGoSearchRun()
+    return search.invoke(query)
+
+
 # ── Main Pipeline ─────────────────────────────────────────────────────────────
 
 def run_browser_search(query: str, top_n: int = 1) -> dict:
@@ -176,35 +186,27 @@ def run_browser_search(query: str, top_n: int = 1) -> dict:
         low    — No results found, or SerpAPI itself threw an exception
     """
     # ── Stage 1: Search ───────────────────────────────────────────────────────
+    search_results = None
+    status_error = None
     try:
         search_results = serpapi_search(query, top_n=max(top_n, 3))
-    except Exception as e:
-        return {
-            "status":     "error",
-            "url":        None,
-            "confidence": "low",
-            "source":     "serpapi",
-            "metadata":   {"error": str(e)},
-        }
-
-    if not search_results:
-        return {
-            "status":     "not_found",
-            "url":        None,
-            "confidence": "low",
-            "source":     "serpapi",
-            "metadata":   {"title": "", "snippet": "No results found for query."},
-        }
-
-    # ── Stage 2: Scrape top result ────────────────────────────────────────────
-    top = search_results[0]
-    url = top["url"]
-
-    try:
-        scraped = firecrawl_scrape(url)
-    except Exception as e:
-        # Firecrawl failed — degrade gracefully to SerpAPI snippet
-        return {
+        top = search_results[0]
+        url = top["url"]
+        try:
+            scraped = firecrawl_scrape(url)
+            result = {
+                "status":     "success",
+                "url":        scraped["sourceURL"],
+                "confidence": "high",
+                "source":     "hybrid_match",
+                "content":    scraped["content"],
+                "metadata": {
+                    "title":   scraped["title"] or top["title"],
+                    "snippet": top["snippet"],
+                },
+            }
+        except Exception as e:
+            status_error = {
             "status":     "success",
             "url":        url,
             "confidence": "medium",
@@ -215,30 +217,38 @@ def run_browser_search(query: str, top_n: int = 1) -> dict:
                 "error":   f"Firecrawl scrape failed: {e}",
             },
         }
-
-    if not scraped:
-        return {
-            "status":     "not_found",
-            "url":        url,
+        print(f"Firecrawl scrape failed for {url}: {status_error}")
+    except Exception as e:
+        status_error = {
+            "status":     "error",
+            "url":        query,
             "confidence": "low",
             "source":     "serpapi",
-            "metadata":   {"title": top["title"], "snippet": top["snippet"]},
+            "metadata":   {"error": str(e)},
         }
-
-    return {
-        "status":     "success",
-        "url":        scraped["sourceURL"],
-        "confidence": "high",
-        "source":     "hybrid_match",
-        "content":    scraped["content"],
-        "metadata": {
-            "title":   scraped["title"] or top["title"],
-            "snippet": top["snippet"],
-        },
-    }
-
-
-# ── LangChain Agent Tool ──────────────────────────────────────────────────────
+        
+    # try:
+    #     response = run_duckduckgo_search(query)
+    #     result = {
+    #         "status":     "success",
+    #         "url":        response,
+    #     }
+    #     return result
+    # except Exception as e:
+    #     print(f"DuckDuckGo search failed for query '{query}': {str(e)}")
+    #     # Not critical, we can still return the SerpAPI result even if DuckDuckGo fails
+    try:
+        os.environ["SERPER_API_KEY"] = "241be9bc1287dbf5bfb3dcf3de00d054a2edb6fb"
+        search = GoogleSerperAPIWrapper()
+        response = search.run(query)
+        result = {
+            "status": "success",
+            "eesult": response,
+        }
+        return result
+    except Exception as e:
+        print(f"Google Serper API search failed for query '{query}': {str(e)}")
+        return None
 
 @tool
 def browser_search_tool(query: str) -> str:
@@ -283,7 +293,6 @@ def browser_search_tool(query: str) -> str:
 def run_agent_example(query: str):
     """
     Example: plug browser_search_tool into a LangGraph ReAct agent backed by Claude.
-    Requires: pip install langchain-anthropic langgraph
     """
     from langchain_groq import ChatGroq
     from langchain.agents import create_agent

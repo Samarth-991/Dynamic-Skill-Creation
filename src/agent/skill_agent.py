@@ -4,11 +4,11 @@ skill_agent.py
 LangGraph agent that replicates Claude's skill execution pipeline.
 
 STEPS:
-    STEP 1  — SKILL DISCOVERY   (system prompt injection from registry)
-    STEP 2  — SKILL ROUTING     (LLM picks best skill from descriptions)
-    STEP 3  — SKILL READING     (read_skill_instructions called first)
-    STEP 4  — SKILL EXECUTION   (LLM follows SKILL.md workflow, calls tools)
-    STEP 5  — RESPONSE GENERATION (clean Markdown, never raw objects)
+  STEP 1  — SKILL DISCOVERY   (system prompt injection from registry)
+  STEP 2  — SKILL ROUTING     (LLM picks best skill from descriptions)
+  STEP 3  — SKILL READING     (read_skill_instructions called first)
+  STEP 4  — SKILL EXECUTION   (LLM follows SKILL.md workflow, calls tools)
+  STEP 5  — RESPONSE GENERATION (clean Markdown, never raw objects)
 
 LLM: provided by user at runtime (OpenAI, Azure, Groq, etc) — agent should be model-agnostic
 Orchestration: LangGraph StateGraph
@@ -19,6 +19,7 @@ import re
 import json
 import importlib
 from pathlib import Path
+    
 from typing import TypedDict, Annotated, Optional, List, Dict, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
@@ -31,12 +32,14 @@ from agent.agent_graph import should_continue,AgentState,extract_token_usage,mer
 from handler.skills_registry import get_registry , format_skills_for_prompt,get_skill_instructions
 from utils.agent_utils import extract_text_content
 from handler.handler_chains import is_skill_query_chain
+from utils.agent_utils import extract_agent_response
 
 SKILL_DISPLAY_NAMES = {
     "browser-search": "Web Search 🌐",
     "opencv-image-reader": "Image Reader 🖼️",
     # Add more mappings as needed
 }
+SKILL_DIRECTORY = Path(__file__).parent / "skills"
 
 
 @tool
@@ -63,23 +66,27 @@ def list_available_skills() -> str:
     return "\n".join(lines)
 
 @tool
-def web_page_scraper_tool(input_value: str) -> str:
-    """Searches for and scrapes web pages to extract titles, headers, and main text content."""
+def web_page_scraper_tool(url: str) -> str:
+    """
+        Use ths tool only to scrapes web pages or Markdown file links to extract titles, headers, and main text content.
+        To search for a topic and find a relevant page, use the browser-search skill instead, then feed the resulting URL into this tool
+        to extract the content.
+    Args:        url: A direct URL to a web page or a Markdown file (e.g. on GitHub). Must start with http:// or https://
+    Returns:     A JSON string containing the page title, headers, and cleaned body text. If the URL is invalid or content cannot be fetched
+    """
     import sys
     import json
     from pathlib import Path
 
-    scripts_dir = Path(__file__).parent / "skills" / "web-page-scraper" / "scripts"
+    scripts_dir = Path(__file__).parent.parent / "skills" / "web-page-scraper" / "scripts"
     sys.path.insert(0, str(scripts_dir))
     try:
-        import web_page_scraper
-        result = web_page_scraper.run_web_page_scraper(input_value)
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        from web_page_scraper import run_web_page_scraper
+        content = run_web_page_scraper(url)
     except Exception as e:
-        return json.dumps({"error": str(e), "error_type": type(e).__name__})
-    finally:
-        if str(scripts_dir) in sys.path:
-            sys.path.remove(str(scripts_dir))
+        content = {"error": str(e), "error_type": type(e).__name__}
+    return content 
+
 
 @tool
 def read_skill_instructions(skill_name: str) -> str:
@@ -100,22 +107,37 @@ def read_skill_instructions(skill_name: str) -> str:
 
 @tool
 def browser_search_tool(query: str) -> str:
-    """Perform a web search and return a list of relevant URLs and snippets."""
+    """
+    This tool is used to Perform a web search and return a list of relevant URLs and snippets
+    Use this tool when the user asks to "search online", "look up", "find information about", or 
+    similar phrases indicating a need for current web data on a topic. 
+    This tool should be used instead of the web_page_scraper when the user's query is broad and requires finding a relevant page first,
+    rather than scraping a known URL.
+    Args:   
+    query: A search query string, e.g. "current president of Iran"
+    Returns: A JSON string containing a list of search results, each with a title, URL
+    """
     import sys
     import json
     from pathlib import Path
 
-    scripts_dir = Path(__file__).parent / "skills" / "browser-search" / "scripts"
+    scripts_dir = Path(__file__).parent.parent / "skills" / "browser-search" / "scripts"
     sys.path.insert(0, str(scripts_dir))
     try:
         import browser_search
         result = browser_search.run_browser_search(query)
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        return json.dumps(result, ensure_ascii=False, indent=4)
     except Exception as e:
         return json.dumps({"error": str(e), "error_type": type(e).__name__})
     finally:
         if str(scripts_dir) in sys.path:
             sys.path.remove(str(scripts_dir))
+
+
+
+TOOLS_LIST = [list_available_skills, web_page_scraper_tool, read_skill_instructions,browser_search_tool]
+TOOLS    = list(TOOLS_LIST)
+TOOL_MAP = {t.name: t for t in TOOLS}
 
 
 def reload_tools():
@@ -134,17 +156,17 @@ def reload_tools():
 
     # Search every loaded module for one whose __file__ matches ours
     for key, mod in list(sys.modules.items()):
-        mod_file = getattr(mod, "__file__", None)
-        if mod_file and Path(mod_file).resolve() == this_file:
-            try:
-                mod      = importlib.reload(mod)
-                TOOLS    = mod.TOOLS_LIST
-                TOOL_MAP = {t.name: t for t in TOOLS}
-                reloaded = True
-                print(f"[SkillAgent] Reloaded via key='{key}' — {len(TOOLS)} tools")
-                break
-            except Exception as e:
-                print(f"[SkillAgent] Reload failed for key='{key}': {e}")
+      mod_file = getattr(mod, "__file__", None)
+      if mod_file and Path(mod_file).resolve() == this_file:
+          try:
+            mod      = importlib.reload(mod)
+            TOOLS    = mod.TOOLS_LIST
+            TOOL_MAP = {t.name: t for t in TOOLS}
+            reloaded = True
+            print(f"[SkillAgent] Reloaded via key='{key}' — {len(TOOLS)} tools")
+            break
+          except Exception as e:
+            print(f"[SkillAgent] Reload failed for key='{key}': {e}")
 
     if not reloaded:
         # Module not in sys.modules yet — just rebuild from current globals
@@ -174,37 +196,37 @@ def build_system_prompt(registry: Optional[Dict] = None, executed_tools: Optiona
         )
 
     return f"""You are a helpful assistant with access to specialised **Skills**.
-    
-    ## Handling Requests
 
-    1. Check if any skill matches the user's request using the descriptions below.
-    2. If a skill matches, call `read_skill_instructions` ONCE, then call the skill tool ONCE.
-    3. After tools return results, write your final Markdown response immediately.
-    4. If no skill matches, answer from your own knowledge.
+  ## Handling Requests
 
-    ## ABSOLUTE Tool Usage Rules — violations cause infinite loops
+  1. Check if any skill matches the user's request using the descriptions below.
+  2. If a skill matches, call `read_skill_instructions` ONCE, then call the skill tool ONCE.
+  3. After tools return results, write your final Markdown response immediately.
+  4. If no skill matches, answer from your own knowledge.
 
-    - Call `read_skill_instructions` EXACTLY ONCE per request — NEVER call it twice.
-    - Call each skill tool EXACTLY ONCE — NEVER repeat a tool call.
-    - If a tool returns an error, write the error to the user — do NOT retry with different args or a different skill.
-    - After receiving ANY tool result (success OR error), STOP calling tools and write your response.
-    - Do NOT fall back to a different skill if the first skill returned an error — report the error instead.
-    - Do NOT call `web_page_scraper_tool` or any other skill as a workaround for a failed YouTube tool.
+  ## ABSOLUTE Tool Usage Rules — violations cause infinite loops
 
-    ---
+  - Call `read_skill_instructions` EXACTLY ONCE per request — NEVER call it twice.
+  - Call each skill tool EXACTLY ONCE — NEVER repeat a tool call.
+  - If a tool returns an error, write the error to the user — do NOT retry with different args or a different skill.
+  - After receiving ANY tool result (success OR error), STOP calling tools and write your response.
+  - Do NOT fall back to a different skill if the first skill returned an error — report the error instead.
+  - Do NOT call `web_page_scraper_tool` or any other skill as a workaround for a failed YouTube tool.
 
-    {skills_block}
-    {done_block}
-    ---
+  ---
 
-    ## Response Format Rules
+  {skills_block}
+  {done_block}
+  ---
+
+  ## Response Format Rules
 
   - **ALWAYS** return clean Markdown text — never raw Python dicts, JSON objects, or repr strings.
   - **NEVER** include `extras`, `signature`, `type`, `id`, or base64 strings in your response.
-    - When a tool returns an error, present it clearly: state the error, explain likely cause, suggest fix.
-    - When a tool returns transcript text, format it clearly for the user.
-    - Execute immediately — do not ask for confirmation.
-    """
+  - When a tool returns an error, present it clearly: state the error, explain likely cause, suggest fix.
+  - When a tool returns transcript text, format it clearly for the user.
+  - Execute immediately — do not ask for confirmation.
+  """
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FAST PATH — handle "list skills" without going through the LLM round-trip
@@ -249,7 +271,9 @@ def tool_node(state: AgentState) -> AgentState:
             print(f"[Tool] ⏭ SKIPPED duplicate call: {name}({json.dumps(args)[:80]})")
             # Return the cached result from the previous identical call
             cached = next(
-                (tr["result_full"] for tr in tool_results if tr["tool"] == name and json.dumps(tr["args"], sort_keys=True) == json.dumps(args, sort_keys=True)),
+                (tr["result_full"] for tr in tool_results
+                 if tr["tool"] == name and
+                 json.dumps(tr["args"], sort_keys=True) == json.dumps(args, sort_keys=True)),
                 json.dumps({"note": f"Already called {name} — using previous result."})
             )
             new_messages.append(
@@ -356,20 +380,18 @@ def run_agent(
     
     # if _is_list_skills_query(user_query):
     if response['result']: 
-        response_text = list_available_skills.invoke({})
-    if verbose:
+      response_text = list_available_skills.invoke({})
+      if verbose:
         print(f"\nFAST PATH — list_available_skills\n{response_text}")
-        return {
-            "response":       response_text,
-            "selected_skill": None,
-            "tools_called":   ["list_available_skills"],
-            "tool_results":   [],
-            "token_usage":    {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+      return {
+          "response":       response_text,
+          "selected_skill": None,
+          "tools_called":   ["list_available_skills"],
         }
     
     def agent_node_with_registry(state: AgentState) -> AgentState:
-        return agent_node(llm,state,registry=registry)
-
+      return agent_node(llm,state,registry=registry)
+  
     graph = StateGraph(AgentState)
     graph.add_node("agent", agent_node_with_registry)
     graph.add_node("execute_tools", tool_node)
@@ -380,9 +402,9 @@ def run_agent(
     )
     graph.add_edge("execute_tools", "agent")
     try:
-        compiled = graph.compile()
+      compiled = graph.compile()
     except Exception as e:
-        print(f"[SkillAgent] Graph compilation failed: {e}")
+      print(f"[SkillAgent] Graph compilation failed: {e}")
         
     initial_state: AgentState = {
         "messages":           [HumanMessage(content=user_query)],
@@ -406,7 +428,6 @@ def run_agent(
         print(f"\n{'='*60}\nRESPONSE:\n{'='*60}\n{response_text}")
         print(f"\nSkill : {final_state.get('selected_skill')}")
         print(f"Tools : {tools_used}")
-
     return {
         "response":       response_text,
         "selected_skill": final_state.get("selected_skill"),
@@ -416,10 +437,49 @@ def run_agent(
     }
 
 
+def run_deepagent(
+        llm,
+        user_query: str,
+        verbose:bool = True,
+        registry:   Optional[Dict] = None,
+    ) -> Dict:
+    """ 
+    Uses Deepagent to run the same agent graph instead of our custom implementation.
+    """
+    if registry is None:
+        registry = get_registry()
+    try:
+        from deepagents import create_deep_agent
+        from deepagents.backends import FilesystemBackend
+    except ImportError as e:
+        print(f"Deepagent is not installed: {e}")
+        return {
+            "response": "Error: Deepagent library is not installed.",
+            "selected_skill": None,
+            "tools_called": [],
+        }
+    dynamic_agent = create_deep_agent(
+        model = llm,
+        system_prompt = build_system_prompt(registry),
+        tools = TOOLS_LIST,
+        skills = [str(SKILL_DIRECTORY)],
+        name = "DynamicSkillAgent",
+    )
+    response = dynamic_agent.invoke(
+        {"messages":[{'role':"user",'content': user_query}]
+        }
+    )
+    return extract_agent_response(query=user_query,response=response)
+   
+
 if __name__ == "__main__":
-    from langchain_groq import ChatGroq
-    os.environ["GROQ_API_KEY"] = 'YOUR_GROQ_KEY'
-    llm_groq = ChatGroq(model="qwen/qwen3-32b")
-    #result = run_agent(llm_groq, "What available skills do you have ?", verbose=True)
-    result = run_agent(llm_groq, "who is president of Iran ?", verbose=True)
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            google_api_key="AIzaSyDB30qA6x_BD6LkxYKW34V1pdpmviXFR90",
+            temperature=0.1,
+        )
+    
+    #result = run_deepagent(llm, "What available skills do you have ?", verbose=True)
+    result = run_deepagent(llm, "look up , what is name of  new supreme leader of Iran ", verbose=True)
     print(result)

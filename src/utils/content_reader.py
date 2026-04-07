@@ -101,9 +101,9 @@ def fetch_url_content(url: str, timeout: int = 20) -> Tuple[str, str]:
     Fetch text content from a URL.
 
     Handles:
-    - Plain markdown / text (GitHub raw, docs sites with text/plain)
-    - HTML pages              (stripped to readable prose)
-    - GitHub blob URLs        → auto-converted to raw.githubusercontent.com
+      - Plain markdown / text (GitHub raw, docs sites with text/plain)
+      - HTML pages              (stripped to readable prose)
+      - GitHub blob URLs        → auto-converted to raw.githubusercontent.com
 
     Args:
         url     : Fully-qualified URL (must include https://).
@@ -178,4 +178,4 @@ def fetch_url_content(url: str, timeout: int = 20) -> Tuple[str, str]:
         content = resp.text.strip()
     content = remove_div_blocks(content)  # clean up any leftover divs in HTML content
     source_hint = f"{parsed.netloc}{parsed.path}"
-    return content, source_hint
+    return content,source_hint

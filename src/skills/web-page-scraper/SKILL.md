@@ -1,12 +1,14 @@
 ---
 name: web-page-scraper
-description: Trigger this skill IMMEDIATELY when the user asks to "scrape", "read", "extract text", or "get content" from a specific URL or a general search topic. Use this for requests like "what does website X say", "summarize this link", or "find and read a page about Y". It handles both direct URL access and search-based discovery to return structured text data.
+description: Trigger this skill IMMEDIATELY when the user asks to "scrape", "read", "extract text", or "get content" from a specific URL or a general search topic. Use this for requests like "what does website X say", "summarize this link". It handles both direct URL access and search-based discovery to return structured text data.
 ---
 
 # Web Page Scraper
 
 ## Overview
-The `web-page-scraper` is a specialized utility designed to retrieve and parse human-readable content from the web. It operates in two modes: Direct Access (scraping a specific URL provided by the user) and Discovery (searching via DuckDuckGo to find a relevant URL, then scraping it). The output is strictly structured JSON, making it ideal for downstream summarization or analysis tasks.
+The `web-page-scraper` is a specialized utility designed only to scrape the url.
+The tool strictly is used to scrape web pages or Markdown file links to extract titles, headers, and main text content. It is not designed to perform search-based discovery.
+strictly structured JSON, making it ideal for downstream summarization or analysis tasks.
 
 ## Automatic Processing
 *   **Input Detection:** The system automatically distinguishes between a valid HTTP/HTTPS URL and a natural language search query.

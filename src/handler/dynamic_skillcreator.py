@@ -119,6 +119,7 @@ def _strip_fences(text: str, lang: str = "") -> str:
     """Remove markdown code fences from LLM output."""
     text = re.sub(rf"^```{lang}\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"^```\s*$",       "", text, flags=re.MULTILINE)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     return text.strip()
 
 

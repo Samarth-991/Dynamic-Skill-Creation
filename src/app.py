@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import logging
 import warnings
-from agent.skill_agent import run_agent, reload_tools
+from agent.skill_agent import run_agent, reload_tools , run_deepagent
 from handler.dynamic_skillcreator import create_skill_programmatic
 from utils.content_reader import read_markdown_file, fetch_url_content
 
@@ -125,7 +125,10 @@ with st.sidebar:
     api_key = st.sidebar.text_input("API_KEY", type="password", key="password")
     if option is not '' and api_key is not '':
         llm = call_llmservice(option,api_key)
-        st.caption("Model: {}".format(llm.model_name))
+        if option == "Google" or option == "Ollama":
+            st.caption("Model: {}".format(llm.model))
+        else:
+            st.caption("Model: {}".format(llm.model_name))
     
     # 1. skill registry 
     _reg = get_registry()
@@ -280,9 +283,9 @@ with tab_chat:
         with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
                     try:
-                        result = run_agent(llm,user_query=user_input,verbose=False,registry = get_registry())
-                        response       = result["response"]  # always a clean str
-                        
+                        result = run_deepagent(llm,user_query=user_input,verbose=False,registry = get_registry())
+                        print(result)
+                        response  = result["response"]  # always a clean str
                         response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
                         selected_skill = result.get("selected_skill")
                         tools_called   = result.get("tools_called", [])
@@ -294,6 +297,7 @@ with tab_chat:
                             fallback_parts = []
                             for tr in tool_results:
                                 tool_name = tr.get("tool",'')
+                                print("tool_name: ",tool_name)
                                 if tool_name in ("read_skill_instructions", "list_available_skills"):
                                     continue
                                 preview = tr.get("result_full") or tr.get("result_preview", "")
